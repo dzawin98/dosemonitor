@@ -1,0 +1,64 @@
+{
+  "default": {
+    "exam": [
+      "StudyDescription",
+      "0008,1030",
+      "SeriesDescription",
+      "0008,103E",
+      "BodyPartExamined",
+      "0018,0015"
+    ],
+    "accession": [
+      "AccessionNumber",
+      "0008,0050"
+    ],
+    "birth_date": [
+      "PatientBirthDate",
+      "0010,0030"
+    ],
+    "age": [
+      "PatientAge",
+      "0010,1010"
+    ],
+    "sex": [
+      "PatientSex",
+      "0010,0040"
+    ]
+  },
+  "CT": {
+    "exam": [
+      "StudyDescription",
+      "0008,1030",
+      "SeriesDescription",
+      "0008,103E",
+      "BodyPartExamined",
+      "0018,0015"
+    ]
+  },
+  "MR": {
+    "exam": [
+      "StudyDescription",
+      "0008,1030",
+      "ProtocolName",
+      "0018,1030",
+      "SeriesDescription",
+      "0008,103E"
+    ]
+  },
+  "XA": {
+    "exam": [
+      "StudyDescription",
+      "0008,1030",
+      "SeriesDescription",
+      "0008,103E"
+    ]
+  },
+  "CR": {
+    "exam": [
+      "StudyDescription",
+      "0008,1030",
+      "BodyPartExamined",
+      "0018,0015"
+    ]
+  }
+}
