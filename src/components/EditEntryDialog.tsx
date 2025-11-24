@@ -26,6 +26,8 @@ interface ExtractDoseResponse {
   extraction_method?: string;
   extraction_status: string;
   extraction_notes?: string;
+  ctdivol_values?: number[];
+  ctdivol_series?: { label: string; value: number }[];
 }
 
 interface StudyTagsResponse {
@@ -53,6 +55,7 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
   const [tagsError, setTagsError] = useState<string | null>(null);
   const [tagsQuery, setTagsQuery] = useState<string>("");
   const [expandedSeq, setExpandedSeq] = useState<Record<string, boolean>>({});
+  const [viewerBase, setViewerBase] = useState<string>("");
 
   const formatValue = (val: any, type?: string): string => {
     try {
@@ -152,9 +155,11 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
   useEffect(() => {
     if (open) {
       setCtdivolInput(
-        extraction?.ctdivol_mgy !== undefined && extraction?.ctdivol_mgy !== null
-          ? String(extraction.ctdivol_mgy)
-          : ""
+        extraction?.ctdivol_average_mgy !== undefined && extraction?.ctdivol_average_mgy !== null
+          ? String(extraction.ctdivol_average_mgy)
+          : extraction?.ctdivol_mgy !== undefined && extraction?.ctdivol_mgy !== null
+            ? String(extraction.ctdivol_mgy)
+            : ""
       );
       setDlpInput(
         extraction?.total_dlp_mgycm !== undefined && extraction?.total_dlp_mgycm !== null
@@ -173,9 +178,10 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
       try {
         setTagsLoading(true);
         setTagsError(null);
+        const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
         const res = await fetch(`${API_BASE}/api/v1/study-tags`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({ study_instance_uid: study.study_instance_uid }),
         });
         const json: StudyTagsResponse = await res.json();
@@ -195,6 +201,19 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
       fetchTags();
     }
   }, [open, activeTab]);
+
+  useEffect(() => {
+    const loadOrthanc = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/orthanc-status`);
+        const json = await res.json();
+        if (json?.orthanc_url) {
+          setViewerBase(String(json.orthanc_url));
+        }
+      } catch {}
+    };
+    loadOrthanc();
+  }, []);
 
   const handleSave = async () => {
     try {
@@ -284,9 +303,10 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
         extraction_status: extraction?.extraction_status || "SUCCESS",
         extraction_notes: extraction?.extraction_notes,
       };
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
       const res = await fetch(`${API_BASE}/api/v1/save-dose`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(payload),
       });
       const json = await res.json();
@@ -302,7 +322,7 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
 
   const handleOpenViewer = () => {
     try {
-      const base = ORTHANC_BASE.replace(/\/+$/, "");
+      const base = (viewerBase || ORTHANC_BASE).replace(/\/+$/, "");
       const url = `${base}/stone-webviewer/index.html?study=${encodeURIComponent(study.study_instance_uid)}`;
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
@@ -416,7 +436,31 @@ const EditEntryDialog = ({ study, extraction, open, onOpenChange }: EditEntryDia
                           />
                         </td>
                         <td className="py-3 text-right text-sm font-medium text-muted-foreground">
-                          {extraction?.ctdivol_mgy !== undefined ? `Auto: ${extraction.ctdivol_mgy}` : "Auto: -"}
+                          {extraction?.ctdivol_average_mgy !== undefined && extraction?.ctdivol_average_mgy !== null
+                            ? `Auto: ${extraction.ctdivol_average_mgy}`
+                            : extraction?.ctdivol_mgy !== undefined && extraction?.ctdivol_mgy !== null
+                              ? `Auto: ${extraction.ctdivol_mgy}`
+                              : "Auto: -"}
+                        </td>
+                      </tr>
+                      <tr className="border-b border-border">
+                        <td className="py-3 align-top text-sm text-foreground">CTDIvol per series</td>
+                        <td className="py-3 text-sm">
+                          {Array.isArray(extraction?.ctdivol_series) && extraction!.ctdivol_series.length > 0 ? (
+                            <div className="space-y-1 text-left">
+                              {extraction!.ctdivol_series.map((it, idx) => (
+                                <div key={idx} className="flex justify-between gap-4">
+                                  <span className="text-foreground">{it.label}</span>
+                                  <span className="text-muted-foreground">{it.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 text-right text-sm font-medium text-muted-foreground">
+                          {Array.isArray(extraction?.ctdivol_series) ? `${extraction!.ctdivol_series.length} nilai` : ""}
                         </td>
                       </tr>
                       <tr className="border-b border-border">

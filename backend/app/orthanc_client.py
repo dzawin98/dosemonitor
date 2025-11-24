@@ -19,6 +19,25 @@ class OrthancClient:
         # Only set auth if credentials are provided
         if self.auth:
             self.session.auth = self.auth
+    
+    def update_config(self, base_url: Optional[str] = None, username: Optional[str] = None, password: Optional[str] = None) -> Dict[str, Any]:
+        if isinstance(base_url, str) and base_url.strip():
+            self.base_url = base_url.strip().rstrip("/")
+        if username is not None:
+            self.username = username.strip()
+        if password is not None:
+            self.password = password.strip()
+        self.auth = None
+        if self.username and self.password:
+            self.auth = HTTPBasicAuth(self.username, self.password)
+        self.session = requests.Session()
+        if self.auth:
+            self.session.auth = self.auth
+        return {
+            "base_url": self.base_url,
+            "username": self.username,
+            "auth_enabled": bool(self.auth)
+        }
         
     def _get_json(self, endpoint: str) -> Optional[Dict]:
         """Helper function to make GET requests to Orthanc API"""

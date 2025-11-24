@@ -21,6 +21,7 @@ class DoseExtractor:
             "ctdivol_mgy": None,
             "ctdivol_average_mgy": None,
             "ctdivol_values": [],
+            "ctdivol_series": [],
             "total_dlp_mgycm": None,
             "manufacturer": None,
             "station_name": None,
@@ -53,6 +54,11 @@ class DoseExtractor:
                     sr_values_for_avg.extend([
                         v for v in sr_data["ctdivol_values"] if isinstance(v, (int, float))
                     ])
+                    for i, v in enumerate(sr_data["ctdivol_values"], start=1):
+                        try:
+                            result["ctdivol_series"].append({"label": f"SR value #{i}", "value": float(v)})
+                        except Exception:
+                            pass
                 result["extraction_method"] = "SR"
                 result["extraction_status"] = "SUCCESS"
                 result["extraction_notes"] = "Extracted from Structured Report"
@@ -92,6 +98,36 @@ class DoseExtractor:
                     result["extraction_status"] = "PARTIAL"
                     result["extraction_notes"] = "Extracted from CT series metadata"
 
+            try:
+                series_ids = self.client.get_study_series(study_id)
+                for series_id in series_ids:
+                    series_info = self.client.get_series_info(series_id) or {}
+                    mt = series_info.get("MainDicomTags", {})
+                    modality = mt.get("Modality") or ""
+                    series_desc = mt.get("SeriesDescription") or ""
+                    instances = self.client.get_series_instances(series_id) or []
+                    if not instances:
+                        continue
+                    tags = self.client.get_instance_tags(instances[0]) or {}
+                    key = "0018,9345" if "0018,9345" in tags else "0018,9345".lower()
+                    tv = tags.get(key)
+                    val = None
+                    if isinstance(tv, dict):
+                        vv = tv.get("Value")
+                        val = vv[0] if isinstance(vv, list) and vv else vv
+                    elif isinstance(tv, (int, float, str)):
+                        val = tv
+                    try:
+                        if val is not None:
+                            f = float(val)
+                            label = series_desc if series_desc else ("Localizer" if modality.upper() in ["SC", "OT"] else "CT")
+                            result["ctdivol_series"].append({"label": label, "value": f})
+                            result["ctdivol_values"].append(f)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
             # Deduplicate combined values for output transparency
             if result["ctdivol_values"]:
                 vals = [v for v in result["ctdivol_values"] if isinstance(v, (int, float))]
@@ -101,6 +137,26 @@ class DoseExtractor:
                     # Set representative ctdivol if not set
                     if result["ctdivol_mgy"] is None:
                         result["ctdivol_mgy"] = vals_unique[0]
+                    try:
+                        if result.get("ctdivol_series"):
+                            seen = set()
+                            dedup_series = []
+                            for item in result["ctdivol_series"]:
+                                v = float(item.get("value"))
+                                matched = None
+                                for dv in vals_unique:
+                                    if abs(v - dv) <= 1e-4:
+                                        matched = dv
+                                        break
+                                if matched is None:
+                                    continue
+                                key = (item.get("label"), matched)
+                                if key not in seen:
+                                    seen.add(key)
+                                    dedup_series.append({"label": item.get("label"), "value": matched})
+                            result["ctdivol_series"] = dedup_series
+                    except Exception:
+                        pass
             # Compute CTDIvol average using ONLY SR values
             if sr_values_for_avg:
                 sr_vals_unique = self._dedupe_values(sr_values_for_avg, tol=1e-4)
@@ -213,9 +269,11 @@ class DoseExtractor:
                         tags = self.client.get_instance_tags(instances[0])
                         if tags:
                             equipment_data = self._parse_equipment_tags(tags)
-                            if equipment_data.get("manufacturer") or equipment_data.get("station_name"):
+                            dose_data = self._parse_ct_instance_dose(tags)
+                            merged = {**equipment_data, **dose_data}
+                            if any(merged.get(k) is not None for k in ["manufacturer", "station_name", "ctdivol_mgy", "total_dlp_mgycm"]):
                                 result["success"] = True
-                                result["data"] = equipment_data
+                                result["data"] = merged
                                 return result
         except Exception as e:
             logger.error(f"Error extracting from CT series: {str(e)}")
@@ -297,6 +355,62 @@ class DoseExtractor:
                     except Exception:
                         pass
 
+            def walk_collect_ctdivol(node: Any, out: List[float]):
+                try:
+                    if isinstance(node, dict):
+                        for k, v in node.items():
+                            kk = k.lower()
+                            if kk == "0018,9345":
+                                val = v.get("Value")
+                                if val is not None:
+                                    try:
+                                        x = val[0] if isinstance(val, list) else val
+                                        out.append(float(x))
+                                    except Exception:
+                                        pass
+                            elif isinstance(v, dict):
+                                t = v.get("Type")
+                                if t == "Sequence":
+                                    items = v.get("Value") or []
+                                    for it in items:
+                                        walk_collect_ctdivol(it, out)
+                            else:
+                                walk_collect_ctdivol(v, out)
+                    elif isinstance(node, list):
+                        for it in node:
+                            walk_collect_ctdivol(it, out)
+                except Exception:
+                    pass
+
+            extra_vals: List[float] = []
+            walk_collect_ctdivol(tags, extra_vals)
+            if extra_vals:
+                for f in extra_vals:
+                    dose_data.setdefault("ctdivol_values", []).append(f)
+                if dose_data["ctdivol_mgy"] is None:
+                    dose_data["ctdivol_mgy"] = extra_vals[0]
+
+            def parse_dlp_from_comments(node: Dict) -> Optional[float]:
+                try:
+                    key = "0040,0310" if "0040,0310" in node else "0040,0310".lower()
+                    cm = node.get(key)
+                    if isinstance(cm, dict):
+                        val = cm.get("Value")
+                        txt = val[0] if isinstance(val, list) and val else val
+                        if isinstance(txt, str):
+                            import re
+                            m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt)
+                            if m:
+                                return float(m.group(1))
+                except Exception:
+                    pass
+                return None
+
+            if dose_data["total_dlp_mgycm"] is None:
+                dlp_from_comments = parse_dlp_from_comments(tags)
+                if dlp_from_comments is not None:
+                    dose_data["total_dlp_mgycm"] = dlp_from_comments
+
             # Equipment
             equipment_data = self._parse_equipment_tags(tags)
             dose_data.update(equipment_data)
@@ -304,6 +418,57 @@ class DoseExtractor:
         except Exception as e:
             logger.error(f"Error parsing SR tags: {str(e)}")
 
+        return dose_data
+
+    def _parse_ct_instance_dose(self, tags: Dict) -> Dict[str, Any]:
+        dose_data: Dict[str, Any] = {"ctdivol_mgy": None, "ctdivol_values": [], "total_dlp_mgycm": None}
+        try:
+            def walk_collect_ctdivol(node: Any, out: List[float]):
+                try:
+                    if isinstance(node, dict):
+                        for k, v in node.items():
+                            kk = k.lower()
+                            if kk == "0018,9345":
+                                val = v.get("Value")
+                                if val is not None:
+                                    try:
+                                        x = val[0] if isinstance(val, list) else val
+                                        out.append(float(x))
+                                    except Exception:
+                                        pass
+                            elif isinstance(v, dict) and v.get("Type") == "Sequence":
+                                items = v.get("Value") or []
+                                for it in items:
+                                    walk_collect_ctdivol(it, out)
+                            else:
+                                walk_collect_ctdivol(v, out)
+                    elif isinstance(node, list):
+                        for it in node:
+                            walk_collect_ctdivol(it, out)
+                except Exception:
+                    pass
+
+            vals: List[float] = []
+            walk_collect_ctdivol(tags, vals)
+            if vals:
+                dose_data["ctdivol_values"] = vals
+                dose_data["ctdivol_mgy"] = vals[0]
+
+            try:
+                key = "0040,0310" if "0040,0310" in tags else "0040,0310".lower()
+                cm = tags.get(key)
+                if isinstance(cm, dict):
+                    val = cm.get("Value")
+                    txt = val[0] if isinstance(val, list) and val else val
+                    if isinstance(txt, str):
+                        import re
+                        m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt)
+                        if m:
+                            dose_data["total_dlp_mgycm"] = float(m.group(1))
+            except Exception:
+                pass
+        except Exception as e:
+            logger.error(f"Error parsing CT instance dose: {str(e)}")
         return dose_data
 
     def _parse_localizer_tags(self, tags: Dict) -> Dict[str, Any]:

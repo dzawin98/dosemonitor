@@ -218,6 +218,47 @@ async def save_dose(
                         except Exception:
                             # default Non Kontras if detection fails
                             data["contrast_used"] = False
+                    if isinstance(data.get("exam_type"), str):
+                        txt = str(data.get("exam_type")).upper()
+                        if "CONTRAST" in txt:
+                            data["contrast_used"] = True
+                    if (data.get("patient_age_years") is None) or (data.get("patient_weight_kg") is None):
+                        try:
+                            series_ids = dose_extractor.client.get_study_series(study_id)
+                            found_age = data.get("patient_age_years") is not None
+                            found_weight = data.get("patient_weight_kg") is not None
+                            for series_id in series_ids:
+                                series_info = dose_extractor.client.get_series_info(series_id) or {}
+                                mt = series_info.get("MainDicomTags", {})
+                                if mt.get("Modality") != "CT":
+                                    continue
+                                instances = dose_extractor.client.get_series_instances(series_id) or []
+                                for inst in instances[:1]:
+                                    tags = dose_extractor.client.get_instance_tags(inst) or {}
+                                    if not found_age:
+                                        age_tag = tags.get("0010,1010") or tags.get("PatientAge")
+                                        ay = None
+                                        if isinstance(age_tag, dict):
+                                            v = age_tag.get("Value")
+                                            ay = v[0] if isinstance(v, list) and v else v
+                                        elif isinstance(age_tag, str):
+                                            ay = age_tag
+                                        data["patient_age_years"] = data.get("patient_age_years") or (_parse_age_years(ay) if ay else None)
+                                        found_age = data.get("patient_age_years") is not None
+                                    if not found_weight:
+                                        w_tag = tags.get("0010,1030") or tags.get("PatientWeight")
+                                        wv = None
+                                        if isinstance(w_tag, dict):
+                                            wv = w_tag.get("Value")
+                                            wv = wv[0] if isinstance(wv, list) and wv else wv
+                                        elif isinstance(w_tag, (str, int, float)):
+                                            wv = w_tag
+                                        data["patient_weight_kg"] = data.get("patient_weight_kg") or (_parse_float(wv) if wv is not None else None)
+                                        found_weight = data.get("patient_weight_kg") is not None
+                                if found_age and found_weight:
+                                    break
+                        except Exception:
+                            pass
 
                     # Rebuild request object with enriched data (keep omitted fields unset)
                     request = DoseSaveRequest(**data)
@@ -233,6 +274,7 @@ async def save_dose(
                 sequence_count=request.sequence_count,
                 ctdivol_mgy=request.ctdivol_mgy,
                 total_dlp_mgycm=request.total_dlp_mgycm,
+                ctdivol_average_mgy=request.ctdivol_average_mgy,
             )
             # Update request with IDRL evaluation
             request.idrl_category = idrl.get("category")
@@ -435,6 +477,7 @@ async def extract_and_save_dose(
                 sequence_count=save_request.sequence_count,
                 ctdivol_mgy=save_request.ctdivol_mgy,
                 total_dlp_mgycm=save_request.total_dlp_mgycm,
+                ctdivol_average_mgy=save_request.ctdivol_average_mgy,
             )
             save_request.idrl_category = idrl.get("category")
             save_request.idrl_ctdivol_limit_mgy = idrl.get("ctdivol_limit_mgy")

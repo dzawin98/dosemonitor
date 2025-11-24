@@ -43,7 +43,7 @@ def classify_exam(
 
     # Basic body-part detection
     has_head = any(w in text for w in ["HEAD", "BRAIN", "KEPALA"])
-    has_thorax = any(w in text for w in ["CHEST", "THORAX", "THORAX", "THORACIC", "PULMON", "LUNG"])
+    has_thorax = any(w in text for w in ["CHEST", "THORAX", "THORAX", "THORACIC", "PULMON", "LUNG", "CARDIAC", "JANTUNG"])
     has_abdomen = "ABDOM" in text
     has_pelvis = "PELVIS" in text or "PELVIC" in text
     has_lumbar = any(w in text for w in ["LUMBAR", "LUMBOSACRAL", "LUMBAL"])
@@ -117,6 +117,7 @@ def compute_idrl_status(
     sequence_count: Optional[int],
     ctdivol_mgy: Optional[float],
     total_dlp_mgycm: Optional[float],
+    ctdivol_average_mgy: Optional[float] = None,
 ) -> Dict[str, Optional[str]]:
     """Compute IDRL status based on thresholds.
 
@@ -136,7 +137,8 @@ def compute_idrl_status(
     ct_limit, dlp_limit = limits
     status = "Normal"
     # Evaluate using whichever values are present
-    if ctdivol_mgy is not None and ct_limit is not None and ctdivol_mgy > ct_limit:
+    ct_for_eval = ctdivol_average_mgy if ctdivol_average_mgy is not None else ctdivol_mgy
+    if ct_for_eval is not None and ct_limit is not None and ct_for_eval > ct_limit:
         status = "Melewati batas"
     if total_dlp_mgycm is not None and dlp_limit is not None and total_dlp_mgycm > dlp_limit:
         status = "Melewati batas"

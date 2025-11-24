@@ -75,7 +75,8 @@ const Reporting = () => {
   const { data, isLoading, refetch } = useQuery<ReportingDataResponse>({
     queryKey: ["reporting-data", queryParams],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/v1/reporting-data?${queryParams}`);
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
+      const res = await fetch(`${API_BASE}/api/v1/reporting-data?${queryParams}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       if (!res.ok) throw new Error(`Gagal memuat reporting data: ${res.status}`);
       return res.json();
     },
@@ -148,7 +149,7 @@ const Reporting = () => {
 
       const res = await fetch(`${API_BASE}/api/v1/save-dose`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...( (()=>{ try{ const t=localStorage.getItem('auth_token')||''; return t?{Authorization:`Bearer ${t}`}:{} }catch{return {} }})() ) },
         body: JSON.stringify(payload),
       });
       const json = await res.json();

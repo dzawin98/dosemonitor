@@ -49,7 +49,8 @@ const PatientList = () => {
   const { data, isLoading, isError, refetch } = useQuery<PatientListResponse>({
     queryKey: ["patient-list"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/v1/patient-list?limit=100&modality=CT`);
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
+      const res = await fetch(`${API_BASE}/api/v1/patient-list?limit=100&modality=CT`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       if (!res.ok) {
         throw new Error(`Gagal memuat patient list: ${res.status}`);
       }
@@ -88,9 +89,10 @@ const PatientList = () => {
       setSelectedStudy(study);
       setDialogOpen(true);
       setExtraction(null);
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
       const res = await fetch(`${API_BASE}/api/v1/extract-dose`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ study_instance_uid: study.study_instance_uid }),
       });
       const json: ExtractDoseResponse = await res.json();

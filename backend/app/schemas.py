@@ -31,6 +31,10 @@ class DoseExtractionResponse(BaseModel):
     ctdivol_mgy: Optional[float] = None
     ctdivol_average_mgy: Optional[float] = None
     ctdivol_values: Optional[List[float]] = None
+    class CTDIVolSeriesItem(BaseModel):
+        label: str
+        value: float
+    ctdivol_series: Optional[List[CTDIVolSeriesItem]] = None
     total_dlp_mgycm: Optional[float] = None
     manufacturer: Optional[str] = None
     station_name: Optional[str] = None
@@ -124,3 +128,75 @@ class ErrorResponse(BaseModel):
     error: str
     detail: Optional[str] = None
     study_instance_uid: Optional[str] = None
+
+# Auth and user schemas
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    token: str
+    username: str
+    role: str
+
+class UserCreateRequest(BaseModel):
+    username: str
+    password: str
+    role: Optional[str] = "user"
+    is_active: Optional[bool] = True
+
+class UserUpdateRequest(BaseModel):
+    password: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UsersListResponse(BaseModel):
+    users: List[UserResponse]
+
+# Orthanc config schemas
+class OrthancConfigResponse(BaseModel):
+    base_url: str
+    username: Optional[str] = None
+    auth_enabled: bool
+
+class OrthancConfigUpdateRequest(BaseModel):
+    base_url: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+# Database config schemas
+class DatabaseConfigResponse(BaseModel):
+    driver: str
+    host: str
+    port: int
+    database: str
+    username: Optional[str] = None
+    password_set: bool
+
+class DatabaseConfigUpdateRequest(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+
+class DatabaseTestRequest(BaseModel):
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+
+class DatabaseTestResponse(BaseModel):
+    success: bool
+    message: str

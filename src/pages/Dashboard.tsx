@@ -66,7 +66,8 @@ const Dashboard = () => {
   const { data, isLoading, refetch } = useQuery<ReportingDataResponse>({
     queryKey: ["dashboard-reporting", queryParams],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/v1/reporting-data?${queryParams}`);
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
+      const res = await fetch(`${API_BASE}/api/v1/reporting-data?${queryParams}`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       if (!res.ok) throw new Error(`Gagal memuat data dashboard: ${res.status}`);
       return res.json();
     },

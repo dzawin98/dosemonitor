@@ -6,6 +6,9 @@ import os
 from app.database import engine, Base
 from sqlalchemy import text
 from app.routers import patients, dose_extraction, reporting
+from app.routers import auth as auth_router
+from app.models import User
+from app.auth import hash_password
 
 # Load environment variables
 load_dotenv()
@@ -54,6 +57,22 @@ except Exception:
     # Do not block app start if migration fails
     pass
 
+# Ensure at least one admin user exists
+try:
+    from sqlalchemy.orm import sessionmaker
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    with SessionLocal() as db:
+        count = db.query(User).count()
+        if count == 0:
+            username = os.getenv("ADMIN_USERNAME", "admin")
+            password = os.getenv("ADMIN_PASSWORD", "admin")
+            ph = hash_password(password)
+            u = User(username=username, password_hash=ph, role="admin", is_active=True)
+            db.add(u)
+            db.commit()
+except Exception:
+    pass
+
 app = FastAPI(
     title="Radiology Dose Management API",
     description="Backend API for managing CT dose data from Orthanc PACS",
@@ -73,6 +92,7 @@ app.add_middleware(
 app.include_router(patients.router, prefix="/api/v1", tags=["patients"])
 app.include_router(dose_extraction.router, prefix="/api/v1", tags=["dose-extraction"])
 app.include_router(reporting.router, prefix="/api/v1", tags=["reporting"])
+app.include_router(auth_router.router, prefix="/api/v1", tags=["auth"])
 
 @app.get("/")
 async def root():
