@@ -188,13 +188,13 @@ async def export_excel(
             raise HTTPException(status_code=404, detail="No records found for export")
         
         # Prepare data rows
-        headers = [
-            'No', 'Tanggal Pemeriksaan (DD/MM/YYYY)', 'Kode Pasien', 'Nama Pasien', 'Jenis Kelamin',
+            headers = [
+                'No', 'Tanggal Pemeriksaan (DD/MM/YYYY)', 'Kode Pasien', 'Nama Pasien', 'Jenis Kelamin',
             'Usia (tahun)', 'Berat Badan (kg)', 'Jenis Pemeriksaan', 'Kontras/Non Kontras',
-            'Jumlah Sequence', 'CTDIvol rata-rata (mGy)', 'DLP Total (mGy*cm)', 'Status IDRL',
-            'Modality', 'Manufacturer', 'Station Name',
-            'Extraction Method', 'Extraction Status', 'Extraction Notes', 'Created At', 'Updated At'
-        ]
+                'Jumlah Sequence', 'CTDIvol rata-rata (mGy)', 'DLP Total (mGy*cm)', 'Status IDRL',
+                'Modality', 'Manufacturer', 'Station Name',
+                'Extraction Method', 'Extraction Status', 'Extraction Notes', 'Created At', 'Updated At'
+            ]
         rows = []
         for idx, record in enumerate(records, start=1):
             # Date formatting DD/MM/YYYY
@@ -223,7 +223,7 @@ async def export_excel(
                 record.patient_sex,
                 record.patient_age_years,
                 record.patient_weight_kg,
-                record.exam_type,
+                (record.idrl_category or record.exam_type),
                 kontras_text,
                 record.sequence_count,
                 avg_ctdivol,

@@ -28,6 +28,7 @@ interface DoseRecord {
   station_name?: string;
   extraction_method?: string;
   extraction_status: string;
+  idrl_category?: string;
   idrl_status?: string;
   created_at: string;
 }
@@ -187,7 +188,7 @@ const Reporting = () => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-60 p-6">
+      <div className="p-6 pt-14 transition-all duration-300" style={{ marginLeft: "var(--sidebar-width)" }}>
         <header className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Saved Dose Data (Reporting)</h1>
@@ -286,7 +287,7 @@ const Reporting = () => {
                       {editing?.id === r.id && editing.field === "exam_type" ? (
                         <Input autoFocus value={tempValue} onChange={(e) => setTempValue(e.target.value)}
                           onBlur={() => saveCell(r, "exam_type")} onKeyDown={(e) => e.key === "Enter" ? saveCell(r, "exam_type") : undefined} />
-                      ) : (r.exam_type || "-")}
+                      ) : (r.idrl_category || r.exam_type || "-")}
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground" onDoubleClick={() => startEdit(r, "contrast_used", r.contrast_used === true ? "Kontras" : "Non Kontras")}>
                       {editing?.id === r.id && editing.field === "contrast_used" ? (

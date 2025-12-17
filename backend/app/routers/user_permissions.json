@@ -1,0 +1,16 @@
+{
+  "4": [
+    "/dashboard",
+    "/worklist",
+    "/reporting"
+  ],
+  "1": [
+    "/dashboard",
+    "/worklist",
+    "/reporting",
+    "/settings",
+    "/settings/dicom",
+    "/settings/database",
+    "/settings/idrl-national"
+  ]
+}

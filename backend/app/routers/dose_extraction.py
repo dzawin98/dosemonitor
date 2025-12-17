@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 import logging
 import time
+import re
 
 from app.schemas import (
     DoseExtractionRequest, 
@@ -15,7 +16,8 @@ from app.schemas import (
 from app.database import get_db
 from app.models import DoseRecord, ExtractionLog
 from app.dose_extractor import dose_extractor
-from app.idrl_thresholds import compute_idrl_status
+from app.idrl_thresholds import compute_idrl_status, map_to_db_category
+from app.models import IDRLNationalThreshold
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -120,6 +122,8 @@ async def save_dose(
                                 return float(v[:-1])
                             if v.endswith("M"):
                                 return round(float(v[:-1]) / 12.0, 2)
+                            if v.endswith("W"):
+                                return round(float(v[:-1]) / 52.0, 2)
                             if v.endswith("D"):
                                 return round(float(v[:-1]) / 365.0, 2)
                             return float(v)
@@ -128,6 +132,23 @@ async def save_dose(
                     def _parse_float(val):
                         try:
                             return float(val)
+                        except Exception:
+                            return None
+                    def _parse_float_any(val):
+                        try:
+                            if isinstance(val, (int, float)):
+                                return float(val)
+                            if isinstance(val, str):
+                                try:
+                                    return float(val)
+                                except Exception:
+                                    m = re.search(r"[-+]?\d*\.?\d+", val)
+                                    return float(m.group(0)) if m else None
+                            if isinstance(val, list) and val:
+                                return _parse_float_any(val[0])
+                            if isinstance(val, dict):
+                                v = val.get("Value")
+                                return _parse_float_any(v)
                         except Exception:
                             return None
 
@@ -230,31 +251,19 @@ async def save_dose(
                             for series_id in series_ids:
                                 series_info = dose_extractor.client.get_series_info(series_id) or {}
                                 mt = series_info.get("MainDicomTags", {})
-                                if mt.get("Modality") != "CT":
-                                    continue
                                 instances = dose_extractor.client.get_series_instances(series_id) or []
-                                for inst in instances[:1]:
-                                    tags = dose_extractor.client.get_instance_tags(inst) or {}
+                                for inst in instances[:3]:
+                                    tags = dose_extractor.client.get_instance_simplified_tags(inst) or dose_extractor.client.get_instance_tags(inst) or {}
                                     if not found_age:
-                                        age_tag = tags.get("0010,1010") or tags.get("PatientAge")
-                                        ay = None
-                                        if isinstance(age_tag, dict):
-                                            v = age_tag.get("Value")
-                                            ay = v[0] if isinstance(v, list) and v else v
-                                        elif isinstance(age_tag, str):
-                                            ay = age_tag
+                                        age_tag = tags.get("PatientAge") or tags.get("0010,1010")
+                                        ay = age_tag
                                         data["patient_age_years"] = data.get("patient_age_years") or (_parse_age_years(ay) if ay else None)
                                         found_age = data.get("patient_age_years") is not None
                                     if not found_weight:
-                                        w_tag = tags.get("0010,1030") or tags.get("PatientWeight")
-                                        wv = None
-                                        if isinstance(w_tag, dict):
-                                            wv = w_tag.get("Value")
-                                            wv = wv[0] if isinstance(wv, list) and wv else wv
-                                        elif isinstance(w_tag, (str, int, float)):
-                                            wv = w_tag
-                                        data["patient_weight_kg"] = data.get("patient_weight_kg") or (_parse_float(wv) if wv is not None else None)
+                                        w_tag = tags.get("PatientWeight") or tags.get("0010,1030")
+                                        data["patient_weight_kg"] = data.get("patient_weight_kg") or (_parse_float_any(w_tag) if w_tag is not None else None)
                                         found_weight = data.get("patient_weight_kg") is not None
+                                    
                                 if found_age and found_weight:
                                     break
                         except Exception:
@@ -276,6 +285,50 @@ async def save_dose(
                 total_dlp_mgycm=request.total_dlp_mgycm,
                 ctdivol_average_mgy=request.ctdivol_average_mgy,
             )
+            # Override thresholds from national DB if available
+            try:
+                age = request.patient_age_years or None
+                age_group = None
+                if age is not None:
+                    if age < 5:
+                        age_group = "BABY_0_4"
+                    elif age < 15:
+                        age_group = "CHILD_5_14"
+                    else:
+                        age_group = "ADULT_15_PLUS"
+                db_key = map_to_db_category(request.exam_type, idrl.get("category"))
+                if db_key:
+                    q = db.query(IDRLNationalThreshold).filter(IDRLNationalThreshold.category_key == db_key)
+                    if request.contrast_used is not None:
+                        q = q.filter(IDRLNationalThreshold.contrast == bool(request.contrast_used))
+                    if age_group:
+                        q = q.filter(IDRLNationalThreshold.age_group == age_group)
+                    row = q.filter(IDRLNationalThreshold.active == True).order_by(IDRLNationalThreshold.year.desc()).first()
+                    if not row:
+                        q2 = db.query(IDRLNationalThreshold).filter(IDRLNationalThreshold.category_key.ilike(f"%{db_key}%"))
+                        if request.contrast_used is not None:
+                            q2 = q2.filter(IDRLNationalThreshold.contrast == bool(request.contrast_used))
+                        if age_group:
+                            q2 = q2.filter(IDRLNationalThreshold.age_group == age_group)
+                        row = q2.filter(IDRLNationalThreshold.active == True).order_by(IDRLNationalThreshold.year.desc()).first()
+                    if row:
+                        ct_limit = row.ctdi_limit_mgy
+                        dlp_limit = row.dlp_limit_mgycm
+                        idrl["ctdivol_limit_mgy"] = ct_limit
+                        idrl["dlp_limit_mgycm"] = dlp_limit
+                        idrl["category"] = db_key
+                        status = idrl.get("status") or "Normal"
+                        ct_for_eval = request.ctdivol_average_mgy if request.ctdivol_average_mgy is not None else request.ctdivol_mgy
+                        if ct_for_eval is not None and ct_limit is not None and ct_for_eval > ct_limit:
+                            status = "Melewati batas"
+                        if request.total_dlp_mgycm is not None and dlp_limit is not None and request.total_dlp_mgycm > dlp_limit:
+                            status = "Melewati batas"
+                        idrl["status"] = status
+                    else:
+                        # Even if thresholds are not found in DB, use the mapped DB category for display
+                        idrl["category"] = db_key
+            except Exception:
+                pass
             # Update request with IDRL evaluation
             request.idrl_category = idrl.get("category")
             request.idrl_ctdivol_limit_mgy = idrl.get("ctdivol_limit_mgy")
@@ -479,6 +532,46 @@ async def extract_and_save_dose(
                 total_dlp_mgycm=save_request.total_dlp_mgycm,
                 ctdivol_average_mgy=save_request.ctdivol_average_mgy,
             )
+            try:
+                age = save_request.patient_age_years or None
+                age_group = None
+                if age is not None:
+                    if age < 5:
+                        age_group = "BABY_0_4"
+                    elif age < 15:
+                        age_group = "CHILD_5_14"
+                    else:
+                        age_group = "ADULT_15_PLUS"
+                db_key = map_to_db_category(save_request.exam_type, idrl.get("category"))
+                if db_key:
+                    q = db.query(IDRLNationalThreshold).filter(IDRLNationalThreshold.category_key == db_key)
+                    if save_request.contrast_used is not None:
+                        q = q.filter(IDRLNationalThreshold.contrast == bool(save_request.contrast_used))
+                    if age_group:
+                        q = q.filter(IDRLNationalThreshold.age_group == age_group)
+                    row = q.filter(IDRLNationalThreshold.active == True).order_by(IDRLNationalThreshold.year.desc()).first()
+                    if not row:
+                        q2 = db.query(IDRLNationalThreshold).filter(IDRLNationalThreshold.category_key.ilike(f"%{db_key}%"))
+                        if save_request.contrast_used is not None:
+                            q2 = q2.filter(IDRLNationalThreshold.contrast == bool(save_request.contrast_used))
+                        if age_group:
+                            q2 = q2.filter(IDRLNationalThreshold.age_group == age_group)
+                        row = q2.filter(IDRLNationalThreshold.active == True).order_by(IDRLNationalThreshold.year.desc()).first()
+                    if row:
+                        ct_limit = row.ctdi_limit_mgy
+                        dlp_limit = row.dlp_limit_mgycm
+                        idrl["ctdivol_limit_mgy"] = ct_limit
+                        idrl["dlp_limit_mgycm"] = dlp_limit
+                        idrl["category"] = db_key
+                        status = idrl.get("status") or "Normal"
+                        ct_for_eval = save_request.ctdivol_average_mgy if save_request.ctdivol_average_mgy is not None else save_request.ctdivol_mgy
+                        if ct_for_eval is not None and ct_limit is not None and ct_for_eval > ct_limit:
+                            status = "Melewati batas"
+                        if save_request.total_dlp_mgycm is not None and dlp_limit is not None and save_request.total_dlp_mgycm > dlp_limit:
+                            status = "Melewati batas"
+                        idrl["status"] = status
+            except Exception:
+                pass
             save_request.idrl_category = idrl.get("category")
             save_request.idrl_ctdivol_limit_mgy = idrl.get("ctdivol_limit_mgy")
             save_request.idrl_dlp_limit_mgycm = idrl.get("dlp_limit_mgycm")

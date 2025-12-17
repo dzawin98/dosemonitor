@@ -17,6 +17,7 @@ from app.schemas import (
 from app.orthanc_client import orthanc_client
 from app.dicom_mapping import get_mapping_for_modality, pick_tag
 from app.database import get_db
+from app.models import DoseRecord, ExtractionLog
 from app.routers.auth import _require_admin
 from sqlalchemy.engine import url as sa_url
 from sqlalchemy import create_engine, text
@@ -28,13 +29,14 @@ router = APIRouter()
 @router.get("/patient-list", response_model=PatientListResponse)
 async def get_patient_list(
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of studies to return"),
-    modality: str = Query(default="CT", description="Filter by modality")
+    modality: str = Query(default="ALL", description="Filter by modality (e.g., CT, MR) or 'ALL' for all studies")
+    , db: Session = Depends(get_db)
 ):
     """
-    Get list of CT studies from Orthanc PACS
+    Get list of studies from Orthanc PACS
     
     - **limit**: Maximum number of studies to return (1-200)
-    - **modality**: Filter by modality (default: CT)
+    - **modality**: Filter by modality (e.g., CT, MR) or 'ALL' to include all
     """
     try:
         # Test Orthanc connection first
@@ -44,8 +46,12 @@ async def get_patient_list(
                 detail="Cannot connect to Orthanc server. Please check configuration."
             )
         
-        # Get studies from Orthanc filtered by modality
-        studies_data = orthanc_client.find_ct_studies(limit=limit, modality=modality)
+        # Get studies from Orthanc (all or filtered by modality)
+        m = (modality or "").strip().upper()
+        if m in ("", "ALL", "ANY", "*"):
+            studies_data = orthanc_client.find_studies_any(limit=limit)
+        else:
+            studies_data = orthanc_client.find_ct_studies(limit=limit, modality=m)
 
         # Helper to format date YYYYMMDD -> DD/MM/YYYY
         def _fmt_ddmmyyyy(d: Optional[str]) -> Optional[str]:
@@ -70,7 +76,7 @@ async def get_patient_list(
                 pass
 
             # Extract requested fields using modality-based mapping
-            modality_used = study.get("modality", modality)
+            modality_used = study.get("modality", m or "")
             mapping = get_mapping_for_modality(modality_used)
 
             birth_raw = pick_tag(patient_tags, mapping.get("birth_date", []))
@@ -97,6 +103,29 @@ async def get_patient_list(
             )
             studies.append(study_info)
         
+        # Enrich with saved/extraction status from database
+        try:
+            uids = [s.study_instance_uid for s in studies if s.study_instance_uid]
+            if uids:
+                # Saved dose records
+                saved_rows = db.query(DoseRecord.study_instance_uid).filter(DoseRecord.study_instance_uid.in_(uids)).all()
+                saved_set = {uid for (uid,) in saved_rows}
+
+                # Latest extraction success per UID
+                logs = db.query(ExtractionLog).filter(ExtractionLog.study_instance_uid.in_(uids)).order_by(ExtractionLog.study_instance_uid, ExtractionLog.created_at.desc()).all()
+                latest_success: dict[str, bool] = {}
+                for lg in logs:
+                    uid = lg.study_instance_uid
+                    if uid not in latest_success:
+                        latest_success[uid] = bool(lg.success)
+
+                for s in studies:
+                    s.saved = s.study_instance_uid in saved_set
+                    s.extracted_success = latest_success.get(s.study_instance_uid)
+        except Exception:
+            # Non-blocking enrichment
+            pass
+
         return PatientListResponse(
             studies=studies,
             total_count=len(studies)

@@ -40,6 +40,7 @@ def classify_exam(
     """
     text = _norm(exam_type)
     is_contrast = bool(contrast_used)
+    has_sinus = any(w in text for w in ["SINUS", "PARANASAL", "SINUSES"])
 
     # Basic body-part detection
     has_head = any(w in text for w in ["HEAD", "BRAIN", "KEPALA"])
@@ -56,6 +57,11 @@ def classify_exam(
     # Also detect by text keywords
     if re.search(r"\b(3\s*PHASE|THREE\s*PHASE|MULTIPHASE|3\s*FASE)\b", text):
         is_multiphase = True
+
+    if has_sinus:
+        cat = "Sinuses Paranasal CT"
+        group = "Kontras" if is_contrast else "Non Kontras"
+        return cat, IDRL_THRESHOLDS[group].get(cat)
 
     # Combined Abdomen + Pelvis
     has_abd_pel = has_abdomen and has_pelvis
@@ -149,3 +155,78 @@ def compute_idrl_status(
         "ctdivol_limit_mgy": ct_limit,
         "dlp_limit_mgycm": dlp_limit,
     }
+
+# Helpers to align classified categories/exam text with database category keys
+# Canonicalization maps for common variants (English/Indonesia, abbreviations)
+CATEGORY_DB_ALIASES: Dict[str, str] = {
+    "CT HEAD": "CT Head",
+    "HEAD": "CT Head",
+    "KEPALA": "CT Head",
+    "CTA HEAD": "CTA Head",
+    "CTA KEPALA": "CTA Head",
+    "CT CHEST": "CT Chest",
+    "CHEST": "CT Chest",
+    "THORAX": "CT Chest",
+    "THORACIC": "CT Chest",
+    "CT ABDOMEN": "CT ABDOMEN",
+    "ABDOMEN": "CT ABDOMEN",
+    "WHOLE ABDOMEN": "CT Whole Abdomen",
+    "CT WHOLE ABDOMEN": "CT Whole Abdomen",
+    "ABDOPELVIS": "CT AbdoPelvis",
+    "ABDOMEN PELVIS": "CT AbdoPelvis",
+    "ABDOMEN/PELVIS": "CT AbdoPelvis",
+    "UROLOGY": "CT Urology",
+    "CT UROLOGY": "CT Urology",
+    "NASOPHARYNX": "CT Larynx/Nasopharynx",
+    "LARYNX": "CT Larynx/Nasopharynx",
+    "CT NECK": "CT Neck",
+    "NECK": "CT Neck",
+    "PELVIS": "CT Pelvis / Hip",
+    "HIP": "CT Pelvis / Hip",
+    "LUMBAR": "CT Lumbar Spine",
+    "LUMBOSACRAL": "CT Lumbar Spine",
+    "MASTOID": "CT Mastoids",
+    "MASTOIDS": "CT Mastoids",
+    "EXTREMITIES": "CT Extremities",
+    "CALCIUM SCORE": "CT Calcium Score",
+    "CARDIAC": "CT Cardiac Studies",
+    "ANGIOGRAPHY": "CT Angiography (CTA)",
+    "CTA": "CT Angiography (CTA)",
+    "FACIAL BONE": "FACIAL BONE 3D CT",
+    "SINUS": "Sinuses Paranasal CT",
+    "SINUSES": "Sinuses Paranasal CT",
+    "PARANASAL": "Sinuses Paranasal CT",
+    "CHEST LOW DOSE": "Chest Low Dose",
+    "NECK^NECKROUTINE (ADULT)": "CT Neck",
+    "NECKROUTINE": "CT Neck",
+    "NECK ROUTINE": "CT Neck",
+    "CT NECK ROUTINE": "CT Neck",
+}
+
+CLASS_TO_DB: Dict[str, str] = {
+    "KEPALA KONTRAS": "CT Head",
+    "KEPALA NON KONTRAS": "CT Head",
+    "THORAX KONTRAS": "CT Chest",
+    "THORAX NON KONTRAS": "CT Chest",
+    "ABDOMEN KONTRAS": "CT ABDOMEN",
+    "ABDOMEN NON KONTRAS": "CT ABDOMEN",
+    "PELVIS KONTRAS": "CT Pelvis / Hip",
+    "PELVIS NON KONTRAS": "CT Pelvis / Hip",
+    "LUMBAL (LUMBOSACRAL)": "CT Lumbar Spine",
+    "ANGIOGRAFI (ANGIO) KEPALA": "CTA Head",
+    "ANGIOGRAFI (ANGIO) THORAX/PULMONAL": "CT Angiography (CTA)",
+    "ABDOMEN DAN PELVIS KONTRAS": "CT AbdoPelvis",
+    "ABDOMEN/PELVIS MULTIPHASE (3 FASE)": "CT AbdoPelvis",
+}
+
+def map_to_db_category(exam_type: Optional[str], classified_category: Optional[str]) -> Optional[str]:
+    txt = _norm(exam_type)
+    if classified_category:
+        cc = _norm(classified_category)
+        if cc in CLASS_TO_DB:
+            return CLASS_TO_DB[cc]
+        return classified_category
+    for key, target in CATEGORY_DB_ALIASES.items():
+        if key in txt:
+            return target
+    return classified_category

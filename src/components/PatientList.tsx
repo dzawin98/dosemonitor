@@ -20,6 +20,8 @@ interface StudyInfo {
   study_description?: string;
   modalities_in_study?: string;
   accession_number?: string;
+  saved?: boolean;
+  extracted_success?: boolean;
 }
 
 type PatientListResponse = {
@@ -45,12 +47,14 @@ const PatientList = () => {
   const [selectedStudy, setSelectedStudy] = useState<StudyInfo | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [extraction, setExtraction] = useState<ExtractDoseResponse | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery<PatientListResponse>({
     queryKey: ["patient-list"],
     queryFn: async () => {
       const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
-      const res = await fetch(`${API_BASE}/api/v1/patient-list?limit=100&modality=CT`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      const res = await fetch(`${API_BASE}/api/v1/patient-list?limit=100&modality=ALL`, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       if (!res.ok) {
         throw new Error(`Gagal memuat patient list: ${res.status}`);
       }
@@ -70,7 +74,7 @@ const PatientList = () => {
     () =>
       studies.filter((s) => {
         const term = searchTerm.toLowerCase();
-        return (
+        const matchesSearch = (
           s.patient_name.toLowerCase().includes(term) ||
           s.patient_id.toLowerCase().includes(term) ||
           (s.study_instance_uid || "").toLowerCase().includes(term) ||
@@ -80,8 +84,10 @@ const PatientList = () => {
           (s.modalities_in_study || "").toLowerCase().includes(term) ||
           (s.accession_number || "").toLowerCase().includes(term)
         );
+        const isPending = !(s.saved) && !(s.extracted_success);
+        return matchesSearch && (showAll ? true : isPending);
       }),
-    [studies, searchTerm]
+    [studies, searchTerm, showAll]
   );
 
   const handleGetDose = async (study: StudyInfo) => {
@@ -106,19 +112,54 @@ const PatientList = () => {
     }
   };
 
+  const handleGetAllDose = async () => {
+    try {
+      setBulkLoading(true);
+      const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
+      const targets = filteredStudies;
+      let ok = 0;
+      let fail = 0;
+      for (const s of targets) {
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/extract-and-save-dose`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ study_instance_uid: s.study_instance_uid }),
+          });
+          if (!res.ok) {
+            fail++;
+          } else {
+            ok++;
+          }
+        } catch {
+          fail++;
+        }
+      }
+      toast({ title: "Get All Dose", description: `Berhasil: ${ok}, Gagal: ${fail}` });
+      await refetch();
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-60 p-6">
+      <div className="p-6 pt-14 transition-all duration-300" style={{ marginLeft: "var(--sidebar-width)" }}>
         <header className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Radiology Dose Management</h1>
             <p className="text-muted-foreground">CT Dose Monitoring System</p>
           </div>
-          <Button variant="outline" className="gap-2">
-            <Download className="h-4 w-4" />
-            Export to Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="default" onClick={handleGetAllDose} disabled={bulkLoading}>
+              {bulkLoading ? "Processing..." : "Get All Dose"}
+            </Button>
+            <Button variant="outline" className="gap-2">
+              <Download className="h-4 w-4" />
+              Export to Excel
+            </Button>
+          </div>
         </header>
 
         <div className="mb-4 flex gap-4">
@@ -131,6 +172,9 @@ const PatientList = () => {
               className="pl-9"
             />
           </div>
+          <Button variant={showAll ? "default" : "secondary"} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? "Filter On" : "Filter"}
+          </Button>
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-card">
@@ -145,6 +189,7 @@ const PatientList = () => {
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Study Date</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Modality in Study</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Accession Number</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Action</th>
                 </tr>
               </thead>
@@ -166,6 +211,15 @@ const PatientList = () => {
                     <td className="px-4 py-3 text-sm text-foreground">{study.study_date || "-"}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{study.modalities_in_study || "-"}</td>
                     <td className="px-4 py-3 text-sm text-foreground">{study.accession_number || "-"}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {study.saved ? (
+                        <span className="inline-flex items-center rounded bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Saved</span>
+                      ) : study.extracted_success ? (
+                        <span className="inline-flex items-center rounded bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-700">Extracted</span>
+                      ) : (
+                        <span className="inline-flex items-center rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Pending</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <Button
                         size="sm"

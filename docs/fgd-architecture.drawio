@@ -1,0 +1,64 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="fgd" name="FGD Architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" background="#ffffff">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="CT" value="CT Modalitas\nDICOM Sender" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6f7ff;strokeColor=#1890ff;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="80" y="220" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="Orthanc" value="DICOM Storage\nOrthanc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fffbe6;strokeColor=#faad14;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="320" y="220" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="Backend" value="Backend\nFastAPI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f6ffed;strokeColor=#52c41a;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="560" y="220" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="DB" value="Database" style="shape=cylinder;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#8c8c8c;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="560" y="340" width="160" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="Extractor" value="Dose Extraction\nCTDIvol dan DLP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6fffb;strokeColor=#13c2c2;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="560" y="120" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="Frontend" value="Frontend\nReact Vite" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9f0ff;strokeColor=#722ed1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="800" y="220" width="180" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="User" value="Pengguna\nAdmin dan User" style="shape=umlActor;verticalAlign=bottom;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="220" width="40" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="Reporting" value="Reporting dan Export\nOutput CTDIvol Total DLP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0f0;strokeColor=#f5222d;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="800" y="120" width="220" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e1" value="DICOM C-STORE" edge="1" parent="1" source="CT" target="Orthanc" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="REST API" edge="1" parent="1" source="Backend" target="Orthanc" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="HTTP JSON" edge="1" parent="1" source="Frontend" target="Backend" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="Query dan Simpan" edge="1" parent="1" source="Backend" target="DB" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="Ekstraksi" edge="1" parent="1" source="Backend" target="Extractor" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="Tampilkan" edge="1" parent="1" source="Frontend" target="Reporting" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="Akses" edge="1" parent="1" source="Frontend" target="User" style="endArrow=classic;strokeColor=#595959;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

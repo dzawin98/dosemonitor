@@ -122,6 +122,39 @@ class OrthancClient:
                 studies.append(study_data)
         
         return studies
+
+    def find_studies_any(self, limit: int = 100) -> List[Dict]:
+        """Find studies without filtering by modality.
+
+        Uses Orthanc `studies` endpoint and gathers basic tags for each study.
+        """
+        ids = self.get_studies(limit=limit)
+        studies: List[Dict] = []
+        for study_id in ids:
+            study_info = self.get_study_info(study_id)
+            if not study_info:
+                continue
+            main_tags = study_info.get("MainDicomTags", {})
+            patient_main_tags = study_info.get("PatientMainDicomTags", {})
+            mods = main_tags.get("ModalitiesInStudy")
+            modality_val = ""
+            if isinstance(mods, list) and len(mods) > 0:
+                modality_val = str(mods[0])
+            elif isinstance(mods, str):
+                modality_val = mods
+            else:
+                modality_val = str(main_tags.get("Modality") or "")
+
+            study_data = {
+                "study_instance_uid": main_tags.get("StudyInstanceUID", ""),
+                "patient_id": patient_main_tags.get("PatientID", ""),
+                "patient_name": patient_main_tags.get("PatientName", ""),
+                "study_date": main_tags.get("StudyDate", ""),
+                "modality": modality_val,
+                "orthanc_id": study_id,
+            }
+            studies.append(study_data)
+        return studies
     
     def get_study_series(self, study_id: str) -> List[str]:
         """Get all series IDs for a study"""

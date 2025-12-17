@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User
-from app.schemas import LoginRequest, LoginResponse, UserCreateRequest, UserResponse, UsersListResponse, UserUpdateRequest
+from app.schemas import LoginRequest, LoginResponse, UserCreateRequest, UserResponse, UsersListResponse, UserUpdateRequest, UserPermissionsUpdateRequest, UserPermissionsResponse
 from app.auth import hash_password, verify_password, create_token, verify_token
+import os, json
 
 router = APIRouter()
 
@@ -90,3 +91,79 @@ async def delete_user(user_id: int, request: Request, db: Session = Depends(get_
     db.delete(user)
     db.commit()
     return {"message": "User deleted"}
+
+# Permissions storage helpers
+_PERMS_FILE = os.path.join(os.path.dirname(__file__), "user_permissions.json")
+
+def _load_perms() -> dict:
+    try:
+        if os.path.exists(_PERMS_FILE):
+            with open(_PERMS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+def _save_perms(data: dict):
+    try:
+        with open(_PERMS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to persist permissions")
+
+def _default_routes_for_role(role: str) -> list[str]:
+    r = (role or "").lower().strip()
+    if r == "admin":
+        return [
+            "/dashboard",
+            "/worklist",
+            "/reporting",
+            "/settings",
+            "/settings/dicom",
+            "/settings/database",
+            "/settings/idrl-national",
+        ]
+    return ["/dashboard", "/worklist", "/reporting"]
+
+@router.get("/users/{user_id}/permissions", response_model=UserPermissionsResponse)
+async def get_user_permissions(user_id: int, request: Request, db: Session = Depends(get_db)):
+    _require_admin(request, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = _load_perms()
+    routes = data.get(str(user_id))
+    if not isinstance(routes, list):
+        routes = _default_routes_for_role(user.role)
+    return UserPermissionsResponse(user_id=user_id, routes=routes)
+
+@router.put("/users/{user_id}/permissions", response_model=UserPermissionsResponse)
+async def update_user_permissions(user_id: int, body: UserPermissionsUpdateRequest, request: Request, db: Session = Depends(get_db)):
+    _require_admin(request, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = _load_perms()
+    # Sanitize routes to known prefixes
+    allowed_prefixes = {
+        "/dashboard",
+        "/worklist",
+        "/reporting",
+        "/settings",
+        "/settings/dicom",
+        "/settings/database",
+        "/settings/idrl-national",
+    }
+    routes = [r for r in body.routes if isinstance(r, str) and r.strip() in allowed_prefixes]
+    data[str(user_id)] = routes
+    _save_perms(data)
+    return UserPermissionsResponse(user_id=user_id, routes=routes)
+
+@router.get("/users/me/permissions", response_model=UserPermissionsResponse)
+async def get_my_permissions(request: Request, db: Session = Depends(get_db)):
+    user = _require_user(request, db)
+    data = _load_perms()
+    routes = data.get(str(user.id))
+    if not isinstance(routes, list):
+        routes = _default_routes_for_role(user.role)
+    return UserPermissionsResponse(user_id=user.id, routes=routes)

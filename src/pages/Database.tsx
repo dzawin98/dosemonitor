@@ -97,7 +97,7 @@ const DatabasePage = () => {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-60 w-full p-6">
+      <div className="w-full p-6 pt-14 transition-all duration-300" style={{ marginLeft: "var(--sidebar-width)" }}>
         <h1 className="mb-4 text-xl font-bold text-foreground">Database</h1>
         <div className="grid grid-cols-2 gap-3 mb-4">
           <Input placeholder="IP/Host" value={host} onChange={(e) => setHost(e.target.value)} />

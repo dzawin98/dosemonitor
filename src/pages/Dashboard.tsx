@@ -31,6 +31,7 @@ interface DoseRecord {
   patient_age_years?: number;
   patient_weight_kg?: number;
   exam_type?: string;
+  idrl_category?: string;
   contrast_used?: boolean;
   sequence_count?: number;
   ctdivol_mgy?: number;
@@ -85,6 +86,7 @@ const Dashboard = () => {
     let dlpSum = 0;
     let dlpCount = 0;
     const examMap: Record<string, number> = {};
+    const examLabel: Record<string, string> = {};
     const dailyMap: Record<string, number> = {};
 
     const asNumber = (v: any) => {
@@ -110,8 +112,10 @@ const Dashboard = () => {
         dlpCount += 1;
       }
 
-      const exam = (r.exam_type || "Unknown").toUpperCase();
+      const rawExam = String(r.idrl_category || r.exam_type || "Unknown");
+      const exam = rawExam.toUpperCase();
       examMap[exam] = (examMap[exam] || 0) + 1;
+      if (!examLabel[exam]) examLabel[exam] = rawExam;
 
       const d = r.study_date ? String(r.study_date) : "Unknown";
       dailyMap[d] = (dailyMap[d] || 0) + 1;
@@ -124,7 +128,7 @@ const Dashboard = () => {
     const complianceRate = totalExams ? Math.round(((normal / (normal + above || 1)) * 100)) : 0;
 
     const examDistribution = Object.entries(examMap)
-      .map(([name, count]) => ({ name, count }))
+      .map(([key, count]) => ({ name: examLabel[key] || key, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
 
@@ -154,7 +158,7 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-60 p-6">
+      <div className="p-6 pt-14 transition-all duration-300" style={{ marginLeft: "var(--sidebar-width)" }}>
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
@@ -265,6 +269,7 @@ const Dashboard = () => {
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient ID</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Nama</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Jenis Pemeriksaan</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kontras</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">CTDIvol (mGy)</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">DLP (mGy·cm)</th>
                       <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status IDRL</th>
@@ -273,14 +278,15 @@ const Dashboard = () => {
                   <tbody>
                     {isLoading && (
                       <tr>
-                        <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={6}>Loading...</td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={7}>Loading...</td>
                       </tr>
                     )}
                     {!isLoading && metrics.aboveList.map((r) => (
                       <tr key={r.id} className="border-b border-border">
                         <td className="px-4 py-3 text-sm">{r.patient_id}</td>
                         <td className="px-4 py-3 text-sm">{r.patient_name}</td>
-                        <td className="px-4 py-3 text-sm">{r.exam_type || "-"}</td>
+                        <td className="px-4 py-3 text-sm">{r.idrl_category || r.exam_type || "-"}</td>
+                        <td className="px-4 py-3 text-sm">{r.contrast_used === true ? "Kontras" : r.contrast_used === false ? "Non-kontras" : "-"}</td>
                         <td className="px-4 py-3 text-sm">{r.ctdivol_average_mgy ?? r.ctdivol_mgy ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{r.total_dlp_mgycm ?? "-"}</td>
                         <td className="px-4 py-3 text-sm">{r.idrl_status || "-"}</td>

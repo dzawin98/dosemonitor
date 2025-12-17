@@ -9,10 +9,33 @@ const TopNav = () => {
       active ? "bg-primary text-primary-foreground" : "bg-muted text-foreground hover:bg-muted/70"
     );
 
+  const perms = (() => {
+    try {
+      const p = localStorage.getItem("auth_perms");
+      return p ? JSON.parse(p) as string[] : [];
+    } catch {
+      return [];
+    }
+  })();
+  const role = (() => { try { return (localStorage.getItem("auth_role") || "").toLowerCase(); } catch { return ""; } })();
+  const isAllowed = (path: string) => {
+    if (role === "admin") return true;
+    if (!perms || perms.length === 0) return true;
+    return perms.includes(path);
+  };
+
   return (
     <nav className="mb-4 flex items-center gap-2">
-      <Link to="/worklist" className={linkClass(pathname === "/worklist")}>Patient Dose List</Link>
-      <Link to="/reporting" className={linkClass(pathname === "/reporting")}>Saved Dose Data</Link>
+      {isAllowed("/worklist") && (
+        <Link to="/worklist" className={linkClass(pathname === "/worklist")}>
+          Worklist
+        </Link>
+      )}
+      {isAllowed("/reporting") && (
+        <Link to="/reporting" className={linkClass(pathname === "/reporting")}>
+          Reporting
+        </Link>
+      )}
     </nav>
   );
 };

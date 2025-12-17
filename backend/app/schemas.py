@@ -17,6 +17,8 @@ class StudyInfo(BaseModel):
     study_description: Optional[str] = None
     modalities_in_study: Optional[str] = None
     accession_number: Optional[str] = None
+    saved: bool = False
+    extracted_success: Optional[bool] = None
 
 class PatientListResponse(BaseModel):
     studies: List[StudyInfo]
@@ -118,6 +120,39 @@ class DoseRecordResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# IDRL National management schemas
+class IDRLNationalCreate(BaseModel):
+    category_key: str
+    contrast: bool = False
+    age_group: str  # 'BABY_0_4' | 'CHILD_5_14' | 'ADULT_15_PLUS'
+    year: int = 2024
+    ctdi_limit_mgy: Optional[float] = None
+    dlp_limit_mgycm: Optional[float] = None
+
+class IDRLNationalUpdate(BaseModel):
+    category_key: Optional[str] = None
+    contrast: Optional[bool] = None
+    age_group: Optional[str] = None
+    year: Optional[int] = None
+    ctdi_limit_mgy: Optional[float] = None
+    dlp_limit_mgycm: Optional[float] = None
+    active: Optional[bool] = None
+
+class IDRLNationalResponse(BaseModel):
+    id: int
+    category_key: str
+    contrast: bool
+    age_group: str
+    year: int
+    ctdi_limit_mgy: Optional[float]
+    dlp_limit_mgycm: Optional[float]
+    active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 class ReportingDataResponse(BaseModel):
     records: List[DoseRecordResponse]
     total_count: int
@@ -162,6 +197,14 @@ class UserResponse(BaseModel):
 
 class UsersListResponse(BaseModel):
     users: List[UserResponse]
+
+# User permissions schemas
+class UserPermissionsUpdateRequest(BaseModel):
+    routes: List[str]
+
+class UserPermissionsResponse(BaseModel):
+    user_id: int
+    routes: List[str]
 
 # Orthanc config schemas
 class OrthancConfigResponse(BaseModel):

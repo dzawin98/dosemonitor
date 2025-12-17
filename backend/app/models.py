@@ -75,3 +75,20 @@ class User(Base):
 
     def __repr__(self):
         return f"<User(username={self.username}, role={self.role})>"
+
+class IDRLNationalThreshold(Base):
+    __tablename__ = "idrl_national_thresholds"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category_key = Column(String(255), index=True, nullable=False)
+    contrast = Column(Boolean, nullable=False, default=False)
+    age_group = Column(String(20), nullable=False)  # 'BABY_0_4', 'CHILD_5_14', 'ADULT_15_PLUS'
+    year = Column(Integer, nullable=False, default=2024)
+    ctdi_limit_mgy = Column(Float, nullable=True)
+    dlp_limit_mgycm = Column(Float, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    def __repr__(self):
+        return f"<IDRLNational(category={self.category_key}, age={self.age_group}, year={self.year})>"

@@ -75,7 +75,7 @@ const DicomStorage = () => {
   return (
     <div className="flex min-h-screen bg-background">
       <Sidebar />
-      <div className="ml-60 w-full p-6">
+      <div className="w-full p-6 pt-14 transition-all duration-300" style={{ marginLeft: "var(--sidebar-width)" }}>
         <h1 className="mb-4 text-xl font-bold text-foreground">Setting Dicom Storage</h1>
         <div className="mb-4 flex gap-3">
           <Input placeholder="Orthanc URL (mis. http://localhost:8042)" value={orthancUrl} onChange={(e) => setOrthancUrl(e.target.value)} />
