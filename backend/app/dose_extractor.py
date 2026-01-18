@@ -10,6 +10,8 @@ class DoseExtractor:
 
     def __init__(self):
         self.client = orthanc_client
+        self._localizer_series_numbers: set[int] = set()
+        self._min_ctdivol_for_avg: float = 0.5
 
     def extract_dose_from_study(self, study_instance_uid: str) -> Dict[str, Any]:
         """
@@ -99,12 +101,28 @@ class DoseExtractor:
                     result["extraction_notes"] = "Extracted from CT series metadata"
 
             try:
+                # Build localizer series number set
                 series_ids = self.client.get_study_series(study_id)
+                self._localizer_series_numbers = set()
                 for series_id in series_ids:
                     series_info = self.client.get_series_info(series_id) or {}
                     mt = series_info.get("MainDicomTags", {})
                     modality = mt.get("Modality") or ""
                     series_desc = mt.get("SeriesDescription") or ""
+                    sn = mt.get("SeriesNumber")
+                    try:
+                        if isinstance(sn, (int, float, str)) and str(sn).strip():
+                            num = int(float(str(sn)))
+                        else:
+                            num = None
+                    except Exception:
+                        num = None
+                    is_localizer = False
+                    sd_upper = str(series_desc).upper()
+                    if ("LOCALIZER" in sd_upper or "TOPOGRAM" in sd_upper or "SCOUT" in sd_upper or modality.upper() in ["SC", "OT"]):
+                        is_localizer = True
+                    if is_localizer and num is not None:
+                        self._localizer_series_numbers.add(num)
                     instances = self.client.get_series_instances(series_id) or []
                     if not instances:
                         continue
@@ -121,8 +139,39 @@ class DoseExtractor:
                         if val is not None:
                             f = float(val)
                             label = series_desc if series_desc else ("Localizer" if modality.upper() in ["SC", "OT"] else "CT")
+                            if not label:
+                                label = "CT"
+                            if is_localizer or ("LOCALIZER" in sd_upper or "TOPOGRAM" in sd_upper or "SCOUT" in sd_upper):
+                                label = "Localizer"
                             result["ctdivol_series"].append({"label": label, "value": f})
                             result["ctdivol_values"].append(f)
+                    except Exception:
+                        pass
+                    try:
+                        ck = "0040,0310" if "0040,0310" in tags else "0040,0310".lower()
+                        cm = tags.get(ck)
+                        if isinstance(cm, dict):
+                            cv = cm.get("Value")
+                            txt = cv[0] if isinstance(cv, list) and cv else cv
+                            if isinstance(txt, str):
+                                import re
+                                sm = re.findall(r"Series\s*#\s*(\d+)\s*Average\s*CTDIvol\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                                for num, ctdi, dlp in sm:
+                                    try:
+                                        fv = float(ctdi)
+                                        n = int(num)
+                                        if n in self._localizer_series_numbers:
+                                            continue
+                                        result["ctdivol_values"].append(fv)
+                                        result["ctdivol_series"].append({"label": f"Series #{n}", "value": fv})
+                                    except Exception:
+                                        pass
+                                tm = re.search(r"Total\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                                if tm and result.get("total_dlp_mgycm") is None:
+                                    try:
+                                        result["total_dlp_mgycm"] = float(tm.group(1))
+                                    except Exception:
+                                        pass
                     except Exception:
                         pass
             except Exception:
@@ -157,15 +206,46 @@ class DoseExtractor:
                             result["ctdivol_series"] = dedup_series
                     except Exception:
                         pass
-            # Compute CTDIvol average using ONLY SR values
-            if sr_values_for_avg:
-                sr_vals_unique = self._dedupe_values(sr_values_for_avg, tol=1e-4)
-                if sr_vals_unique:
-                    result["ctdivol_average_mgy"] = sum(sr_vals_unique) / len(sr_vals_unique)
+            # Compute CTDIvol average EXCLUDING localizer/topogram
+            try:
+                series_vals_for_avg: List[float] = []
+                for item in result.get("ctdivol_series", []):
+                    label = str(item.get("label") or "").upper()
+                    val = item.get("value")
+                    if not isinstance(val, (int, float)):
+                        try:
+                            val = float(val)
+                        except Exception:
+                            continue
+                    # Skip localizer by label hints
+                    if ("LOCALIZER" in label or "TOPOGRAM" in label or "SCOUT" in label):
+                        continue
+                    # Skip if label is Series #N where N is localizer
+                    if label.startswith("SERIES #"):
+                        try:
+                            n = int(label.split("#")[1].strip())
+                            if n in self._localizer_series_numbers:
+                                continue
+                        except Exception:
+                            pass
+                    series_vals_for_avg.append(float(val))
+                series_vals_for_avg = [v for v in self._dedupe_values(series_vals_for_avg, tol=1e-4) if v >= self._min_ctdivol_for_avg]
+                if series_vals_for_avg:
+                    result["ctdivol_average_mgy"] = sum(series_vals_for_avg) / len(series_vals_for_avg)
                     if result["extraction_status"] == "FAILED":
                         result["extraction_status"] = "SUCCESS"
                         if not result.get("extraction_notes"):
-                            result["extraction_notes"] = "Computed CTDIvol average from Structured Report"
+                            result["extraction_notes"] = "Computed CTDIvol average excluding localizer"
+                elif sr_values_for_avg:
+                    sr_vals_unique = [v for v in self._dedupe_values(sr_values_for_avg, tol=1e-4) if v >= self._min_ctdivol_for_avg]
+                    if sr_vals_unique:
+                        result["ctdivol_average_mgy"] = sum(sr_vals_unique) / len(sr_vals_unique)
+                        if result["extraction_status"] == "FAILED":
+                            result["extraction_status"] = "SUCCESS"
+                            if not result.get("extraction_notes"):
+                                result["extraction_notes"] = "Computed CTDIvol average from Structured Report"
+            except Exception:
+                pass
 
             if result["extraction_status"] == "FAILED" and not result["ctdivol_values"]:
                 result["extraction_notes"] = "No dose information found in any series"
@@ -399,9 +479,24 @@ class DoseExtractor:
                         txt = val[0] if isinstance(val, list) and val else val
                         if isinstance(txt, str):
                             import re
-                            m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt)
+                            m = re.search(r"Total\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                            if not m:
+                                m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
                             if m:
                                 return float(m.group(1))
+                            # Philips series-level parsing with exclusion of localizer
+                            series_matches = re.findall(r"Series\s*#\s*(\d+)\s*Average\s*CTDIvol\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                            for num, ctdiv, _dlp in series_matches:
+                                try:
+                                    n = int(num)
+                                    if hasattr(self, "_localizer_series_numbers") and n in self._localizer_series_numbers:
+                                        continue
+                                    f_ctdiv = float(ctdiv)
+                                    dose_data.setdefault("ctdivol_values", [])
+                                    dose_data["ctdivol_values"].append(f_ctdiv)
+                                    dose_data["ctdivol_mgy"] = dose_data["ctdivol_mgy"] or f_ctdiv
+                                except Exception:
+                                    pass
                 except Exception:
                     pass
                 return None
@@ -462,9 +557,24 @@ class DoseExtractor:
                     txt = val[0] if isinstance(val, list) and val else val
                     if isinstance(txt, str):
                         import re
-                        m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt)
+                        m = re.search(r"Total\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
                         if m:
                             dose_data["total_dlp_mgycm"] = float(m.group(1))
+                        else:
+                            m = re.search(r"TotalDLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                            if m:
+                                dose_data["total_dlp_mgycm"] = float(m.group(1))
+                        series_matches = re.findall(r"Series\s*#\s*(\d+)\s*Average\s*CTDIvol\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*DLP\s*=\s*([0-9]+(?:\.[0-9]+)?)", txt, re.IGNORECASE)
+                        for num, ctdiv, dlp in series_matches:
+                            try:
+                                f_ctdiv = float(ctdiv)
+                                dose_data["ctdivol_values"].append(f_ctdiv)
+                                dose_data["ctdivol_mgy"] = dose_data["ctdivol_mgy"] or f_ctdiv
+                                label = f"Series #{num}"
+                                dose_data.setdefault("ctdivol_series", [])
+                                dose_data["ctdivol_series"].append({"label": label, "value": f_ctdiv})
+                            except Exception:
+                                pass
             except Exception:
                 pass
         except Exception as e:
