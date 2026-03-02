@@ -45,6 +45,8 @@ const Reporting = () => {
   const [endDate, setEndDate] = useState<string>("");
   const [patientId, setPatientId] = useState<string>("");
   const [manufacturer, setManufacturer] = useState<string>("");
+  const [sortKey, setSortKey] = useState<keyof DoseRecord | "study_date_parsed">("study_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const formatDateDDMMYYYY = (d?: string): string => {
     if (!d) return "-";
@@ -84,6 +86,54 @@ const Reporting = () => {
   });
 
   const records = data?.records ?? [];
+
+  const parseStudyDate = (d?: string) => {
+    if (!d) return 0;
+    const s = String(d).trim();
+    if (/^\d{8}$/.test(s)) {
+      const y = parseInt(s.slice(0, 4));
+      const m = parseInt(s.slice(4, 6));
+      const dd = parseInt(s.slice(6, 8));
+      return new Date(y, m - 1, dd).getTime();
+    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split("/").map((x) => parseInt(x));
+      return new Date(yyyy, mm - 1, dd).getTime();
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [yyyy, mm, dd] = s.split("-").map((x) => parseInt(x));
+      return new Date(yyyy, mm - 1, dd).getTime();
+    }
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? 0 : t;
+  };
+
+  const sortedRecords = useMemo(() => {
+    const arr = [...records];
+    arr.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "study_date" || sortKey === "study_date_parsed") {
+        const av = parseStudyDate(a.study_date);
+        const bv = parseStudyDate(b.study_date);
+        return av === bv ? 0 : av > bv ? dir : -dir;
+      }
+      const av = (a[sortKey as keyof DoseRecord] ?? "") as any;
+      const bv = (b[sortKey as keyof DoseRecord] ?? "") as any;
+      if (typeof av === "number" && typeof bv === "number") return av === bv ? 0 : av > bv ? dir : -dir;
+      if (typeof av === "boolean" && typeof bv === "boolean") return av === bv ? 0 : av ? dir : -dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return arr;
+  }, [records, sortKey, sortDir]);
+
+  const toggleSort = (key: keyof DoseRecord | "study_date_parsed") => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "study_date" || key === "study_date_parsed" ? "desc" : "asc");
+    }
+  };
 
   // Inline editing state
   const [editing, setEditing] = useState<{ id: number; field: keyof DoseRecord } | null>(null);
@@ -228,19 +278,45 @@ const Reporting = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Tanggal Pemeriksaan</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kode Pasien</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Nama Pasien</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Jenis Kelamin</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Usia (tahun)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Berat Badan (kg)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Jenis Pemeriksaan</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kontras</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Jumlah Sequence</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">CTDIvol rata-rata (mGy)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">DLP Total (mGy·cm)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Manufacturer</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Station Name</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("study_date")}>
+                    Tanggal Pemeriksaan {sortKey === "study_date" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_id")}>
+                    Kode Pasien {sortKey === "patient_id" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_name")}>
+                    Nama Pasien {sortKey === "patient_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_sex")}>
+                    Jenis Kelamin {sortKey === "patient_sex" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_age_years")}>
+                    Usia (tahun) {sortKey === "patient_age_years" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_weight_kg")}>
+                    Berat Badan (kg) {sortKey === "patient_weight_kg" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("exam_type")}>
+                    Jenis Pemeriksaan {sortKey === "exam_type" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("contrast_used")}>
+                    Kontras {sortKey === "contrast_used" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("sequence_count")}>
+                    Jumlah Sequence {sortKey === "sequence_count" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("ctdivol_average_mgy")}>
+                    CTDIvol rata-rata (mGy) {sortKey === "ctdivol_average_mgy" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("total_dlp_mgycm")}>
+                    DLP Total (mGy·cm) {sortKey === "total_dlp_mgycm" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("manufacturer")}>
+                    Manufacturer {sortKey === "manufacturer" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("station_name")}>
+                    Station Name {sortKey === "station_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status</th>
                 </tr>
               </thead>
@@ -250,7 +326,7 @@ const Reporting = () => {
                     <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={14}>Loading data...</td>
                   </tr>
                 )}
-                {!isLoading && records.map((r) => (
+                {!isLoading && sortedRecords.map((r) => (
                   <tr key={r.id} className="border-b border-border transition-colors hover:bg-muted/30">
                     <td className="px-4 py-3 text-sm text-muted-foreground">{formatDateDDMMYYYY(r.study_date)}</td>
                     <td className="px-4 py-3 text-sm text-foreground" onDoubleClick={() => startEdit(r, "patient_id", r.patient_id)}>

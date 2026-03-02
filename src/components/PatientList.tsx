@@ -49,6 +49,8 @@ const PatientList = () => {
   const [extraction, setExtraction] = useState<ExtractDoseResponse | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [sortKey, setSortKey] = useState<keyof StudyInfo | "study_date_parsed">("study_date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const { data, isLoading, isError, refetch } = useQuery<PatientListResponse>({
     queryKey: ["patient-list"],
@@ -89,6 +91,53 @@ const PatientList = () => {
       }),
     [studies, searchTerm, showAll]
   );
+
+  const parseStudyDate = (d?: string) => {
+    if (!d) return 0;
+    const s = String(d).trim();
+    if (/^\d{8}$/.test(s)) {
+      const y = parseInt(s.slice(0, 4));
+      const m = parseInt(s.slice(4, 6));
+      const dd = parseInt(s.slice(6, 8));
+      return new Date(y, m - 1, dd).getTime();
+    }
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+      const [dd, mm, yyyy] = s.split("/").map((x) => parseInt(x));
+      return new Date(yyyy, mm - 1, dd).getTime();
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [yyyy, mm, dd] = s.split("-").map((x) => parseInt(x));
+      return new Date(yyyy, mm - 1, dd).getTime();
+    }
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? 0 : t;
+  };
+
+  const sortedStudies = useMemo(() => {
+    const arr = [...filteredStudies];
+    arr.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      if (sortKey === "study_date" || sortKey === "study_date_parsed") {
+        const av = parseStudyDate(a.study_date);
+        const bv = parseStudyDate(b.study_date);
+        return av === bv ? 0 : av > bv ? dir : -dir;
+      }
+      const av = (a[sortKey as keyof StudyInfo] ?? "") as any;
+      const bv = (b[sortKey as keyof StudyInfo] ?? "") as any;
+      if (typeof av === "number" && typeof bv === "number") return av === bv ? 0 : av > bv ? dir : -dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return arr;
+  }, [filteredStudies, sortKey, sortDir]);
+
+  const toggleSort = (key: keyof StudyInfo | "study_date_parsed") => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "study_date" || key === "study_date_parsed" ? "desc" : "asc");
+    }
+  };
 
   const handleGetDose = async (study: StudyInfo) => {
     try {
@@ -182,13 +231,27 @@ const PatientList = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient Birthdate</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient ID</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Study Description</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Study Date</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Modality in Study</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Accession Number</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_birth_date")}>
+                    Patient Birthdate {sortKey === "patient_birth_date" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_name")}>
+                    Patient Name {sortKey === "patient_name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("patient_id")}>
+                    Patient ID {sortKey === "patient_id" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("study_description")}>
+                    Study Description {sortKey === "study_description" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("study_date")}>
+                    Study Date {sortKey === "study_date" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("modalities_in_study")}>
+                    Modality in Study {sortKey === "modalities_in_study" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("accession_number")}>
+                    Accession Number {sortKey === "accession_number" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Action</th>
                 </tr>
@@ -199,7 +262,7 @@ const PatientList = () => {
                     <td className="px-4 py-3 text-sm text-muted-foreground" colSpan={8}>Loading data...</td>
                   </tr>
                 )}
-                {!isLoading && filteredStudies.map((study) => (
+                {!isLoading && sortedStudies.map((study) => (
                   <tr
                     key={study.study_instance_uid}
                     className="border-b border-border transition-colors hover:bg-muted/30"

@@ -31,6 +31,8 @@ const IdrlNational = () => {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<{ category_key: string; contrast: boolean; age_group: string; year: number; ctdi_limit_mgy?: string; dlp_limit_mgycm?: string }>({ category_key: "", contrast: false, age_group: "ADULT_15_PLUS", year: 2024 });
   const [editRow, setEditRow] = useState<Threshold | null>(null);
+  const [sortKey, setSortKey] = useState<keyof Threshold>("category_key");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const token = (() => { try { return localStorage.getItem("auth_token") || ""; } catch { return ""; } })();
 
@@ -48,6 +50,28 @@ const IdrlNational = () => {
   };
 
   useEffect(() => { fetchList(); }, []);
+
+  const sortedData = useMemo(() => {
+    const arr = [...data];
+    arr.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const av = (a[sortKey] ?? "") as any;
+      const bv = (b[sortKey] ?? "") as any;
+      if (typeof av === "number" && typeof bv === "number") return av === bv ? 0 : av > bv ? dir : -dir;
+      if (typeof av === "boolean" && typeof bv === "boolean") return av === bv ? 0 : av ? dir : -dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return arr;
+  }, [data, sortKey, sortDir]);
+
+  const toggleSort = (key: keyof Threshold) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   const handleCreate = async () => {
     try {
@@ -155,13 +179,27 @@ const IdrlNational = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kategori</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kontras</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Kelompok Usia</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Tahun</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">CTDIvol (mGy)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">DLP (mGy·cm)</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Aktif</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("category_key")}>
+                    Kategori {sortKey === "category_key" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("contrast")}>
+                    Kontras {sortKey === "contrast" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("age_group")}>
+                    Kelompok Usia {sortKey === "age_group" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("year")}>
+                    Tahun {sortKey === "year" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("ctdi_limit_mgy")}>
+                    CTDIvol (mGy) {sortKey === "ctdi_limit_mgy" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("dlp_limit_mgycm")}>
+                    DLP (mGy·cm) {sortKey === "dlp_limit_mgycm" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-foreground cursor-pointer select-none" onClick={() => toggleSort("active")}>
+                    Aktif {sortKey === "active" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Aksi</th>
                 </tr>
               </thead>
@@ -169,7 +207,7 @@ const IdrlNational = () => {
                 {loading && (
                   <tr><td className="px-4 py-3 text-sm text-muted-foreground" colSpan={8}>Loading...</td></tr>
                 )}
-                {!loading && data.map((r) => (
+                {!loading && sortedData.map((r) => (
                   <tr key={r.id} className="border-b border-border">
                     <td className="px-4 py-3 text-sm">{r.category_key}</td>
                     <td className="px-4 py-3 text-sm">{r.contrast ? "Ya" : "Tidak"}</td>

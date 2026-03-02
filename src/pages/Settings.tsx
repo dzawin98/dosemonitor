@@ -30,6 +30,8 @@ const Settings = () => {
   const [manageUser, setManageUser] = useState<User | null>(null);
   const [routes, setRoutes] = useState<string[]>([]);
   const token = getToken();
+  const [sortKey, setSortKey] = useState<keyof User>("username");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   const ALL_NAV_ITEMS: { path: string; label: string }[] = [
     { path: "/dashboard", label: "Dashboard" },
@@ -56,6 +58,23 @@ const Settings = () => {
   };
 
   useEffect(() => { fetchUsers(); }, []);
+
+  const sortedUsers = [...users].sort((a, b) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const av = (a[sortKey] ?? "") as any;
+    const bv = (b[sortKey] ?? "") as any;
+    if (typeof av === "boolean" && typeof bv === "boolean") return av === bv ? 0 : av ? dir : -dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+
+  const toggleSort = (key: keyof User) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
 
   const handleCreate = async () => {
@@ -185,14 +204,20 @@ const Settings = () => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-3 py-2 text-left">Username</th>
-                <th className="px-3 py-2 text-left">Role</th>
-                <th className="px-3 py-2 text-left">Aktif</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none" onClick={() => toggleSort("username")}>
+                  Username {sortKey === "username" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                </th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none" onClick={() => toggleSort("role")}>
+                  Role {sortKey === "role" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                </th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none" onClick={() => toggleSort("is_active")}>
+                  Aktif {sortKey === "is_active" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                </th>
                 <th className="px-3 py-2 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {sortedUsers.map((u) => (
                 <tr key={u.id} className="border-b border-border">
                   <td className="px-3 py-2">{u.username}</td>
                   <td className="px-3 py-2">{u.role}</td>
