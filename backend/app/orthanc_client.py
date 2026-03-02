@@ -203,7 +203,8 @@ class OrthancClient:
             # Look for SR modality or dose-related series descriptions
             if (modality == "SR" or 
                 "DOSE" in series_description or 
-                "REPORT" in series_description):
+                "REPORT" in series_description or
+                "SUMMARY" in series_description):
                 dose_series.append(series_id)
         
         return dose_series

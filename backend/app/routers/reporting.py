@@ -188,13 +188,20 @@ async def export_excel(
             raise HTTPException(status_code=404, detail="No records found for export")
         
         # Prepare data rows
-            headers = [
-                'No', 'Tanggal Pemeriksaan (DD/MM/YYYY)', 'Kode Pasien', 'Nama Pasien', 'Jenis Kelamin',
-            'Usia (tahun)', 'Berat Badan (kg)', 'Jenis Pemeriksaan', 'Kontras/Non Kontras',
-                'Jumlah Sequence', 'CTDIvol rata-rata (mGy)', 'DLP Total (mGy*cm)', 'Status IDRL',
-                'Modality', 'Manufacturer', 'Station Name',
-                'Extraction Method', 'Extraction Status', 'Extraction Notes', 'Created At', 'Updated At'
-            ]
+        headers = [
+            'No',
+            'Tanggal Pemeriksaan\nDD/MM/YYYY',
+            'Kode Pasien\n(Jika Ada)',
+            'Nama Pasien\n(Jika Ada)',
+            'Jenis Kelamin',
+            'Usia\n(tahun)',
+            'Berat Badan\n(kg)',
+            'Jenis Pemeriksaan',
+            'Kontras/\nNon Kontras',
+            'Jumlah Sequence\n[ 1/2/3/>=4 ]',
+            'CTDIvol rata-rata\n(mGy)',
+            'DLP Total\n(mGy.cm)'
+        ]
         rows = []
         for idx, record in enumerate(records, start=1):
             # Date formatting DD/MM/YYYY
@@ -227,16 +234,7 @@ async def export_excel(
                 kontras_text,
                 record.sequence_count,
                 avg_ctdivol,
-                record.total_dlp_mgycm,
-                (record.idrl_status or ''),
-                record.modality,
-                record.manufacturer,
-                record.station_name,
-                record.extraction_method,
-                record.extraction_status,
-                record.extraction_notes,
-                record.created_at.strftime('%Y-%m-%d %H:%M:%S') if record.created_at else '',
-                record.updated_at.strftime('%Y-%m-%d %H:%M:%S') if record.updated_at else ''
+                record.total_dlp_mgycm
             ])
 
         # Create Excel file in memory using xlsxwriter
@@ -250,7 +248,8 @@ async def export_excel(
             'align': 'center',
             'valign': 'vcenter',
             'bg_color': '#D9E1F2',  # light blue-gray header
-            'border': 1
+            'border': 1,
+            'text_wrap': True  # Enable text wrapping for multiline headers
         })
         center_fmt = workbook.add_format({'align': 'center', 'border': 1})
         left_fmt = workbook.add_format({'align': 'left', 'border': 1})
@@ -262,26 +261,17 @@ async def export_excel(
         # Column widths tuned for readability
         col_widths = [
             5,   # No
-            18,  # Tanggal Pemeriksaan (DD/MM/YYYY)
+            18,  # Tanggal Pemeriksaan
             16,  # Kode Pasien
             28,  # Nama Pasien
             12,  # Jenis Kelamin
-            12,  # Usia (tahun)
-            14,  # Berat Badan (kg)
+            10,  # Usia
+            12,  # Berat Badan
             20,  # Jenis Pemeriksaan
             16,  # Kontras/Non Kontras
-            18,  # Jumlah Sequence [1/2/3/>4]
-            18,  # CTDIvol rata-rata (mGy)
-            18,  # DLP Total (mGy*cm)
-            14,  # Status IDRL
-            12,  # Modality
-            20,  # Manufacturer
-            18,  # Station Name
-            18,  # Extraction Method
-            16,  # Extraction Status
-            30,  # Extraction Notes
-            20,  # Created At
-            20   # Updated At
+            18,  # Jumlah Sequence
+            18,  # CTDIvol rata-rata
+            18,  # DLP Total
         ]
         for idx, w in enumerate(col_widths):
             # Apply a default cell format (left/center choice will be per-cell below)
@@ -292,43 +282,31 @@ async def export_excel(
         ws_data.autofilter(0, 0, len(rows), len(headers) - 1)
 
         # Write headers with header format
-        ws_data.set_row(0, 20)
+        ws_data.set_row(0, 40)  # Increase header row height for wrapped text
         for col, h in enumerate(headers):
             ws_data.write(0, col, h, header_fmt)
 
         # Helper to select cell format per column
         def fmt_for_col(col_index: int):
-            # Map columns: based on headers order above
-            if col_index in [0]:
+            # Map columns based on new headers order
+            if col_index == 0:  # No
                 return center_fmt
-            if col_index in [1]:
+            if col_index == 1:  # Tanggal
                 return date_fmt
-            if col_index in [2, 3, 7, 8, 12, 14, 15, 16, 17]:
-                # text-ish columns
+            if col_index in [2, 3, 7]:  # Kode, Nama, Jenis Pemeriksaan
                 return left_fmt
-            if col_index in [4]:
+            if col_index == 4:  # Jenis Kelamin
                 return center_fmt
-            if col_index in [5]:
-                # age years integer-ish
+            if col_index == 5:  # Usia
                 return num_fmt_0
-            if col_index in [6]:
-                # weight kg, allow one decimal
+            if col_index == 6:  # Berat Badan
                 return num_fmt_1
-            if col_index in [9]:
-                # jumlah sequence integer
+            if col_index == 8:  # Kontras
+                return center_fmt
+            if col_index == 9:  # Jumlah Sequence
                 return num_fmt_0
-            if col_index in [10, 11]:
-                # CTDIvol avg and DLP total
+            if col_index in [10, 11]:  # CTDIvol, DLP
                 return num_fmt_2
-            if col_index in [12]:
-                # Status IDRL text
-                return center_fmt
-            if col_index in [13]:
-                # Manufacturer
-                return left_fmt
-            if col_index in [18, 19]:
-                # timestamps
-                return center_fmt
             return left_fmt
 
         # Write rows with formatting
@@ -340,7 +318,7 @@ async def export_excel(
 
         # Summary sheet
         ws_summary = workbook.add_worksheet('Summary')
-        # Columns indexes updated due to new headers
+        # Columns indexes updated due to new headers (CTDIvol is at index 10, DLP at 11)
         ctdivols = [r[10] for r in rows if r[10] is not None]
         dlps = [r[11] for r in rows if r[11] is not None]
         summary_items = [
@@ -369,8 +347,8 @@ async def export_excel(
         output.seek(0)
         
         # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"dose_report_{timestamp}.xlsx"
+        timestamp = datetime.now().strftime("%d%m%Y-%H%M")
+        filename = f"dose-{timestamp}.xlsx"
         
         # Return Excel file
         return Response(
